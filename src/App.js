@@ -18,6 +18,8 @@ function App() {
 		{ name: "Product 1", price: 24.98, imageFile: null },
 	]);
 
+	const [csvData, setCsvData] = useState(null);
+
 	const [isLoading, setIsLoading] = useState(false);
 	const [result, setResult] = useState(null);
 	const [error, setError] = useState(null);
@@ -53,6 +55,79 @@ function App() {
 
 	const removeProduct = (index) => {
 		setProducts((prev) => prev.filter((_, i) => i !== index));
+	};
+
+	const parseCSV = (csvText) => {
+		const lines = csvText.split("\n");
+		const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+
+		const products = [];
+		for (let i = 1; i < lines.length; i++) {
+			if (lines[i].trim()) {
+				const values = lines[i].split(",").map((v) => v.trim());
+				const product = {};
+
+				headers.forEach((header, index) => {
+					if (values[index]) {
+						if (header === "price" || header === "regular_price") {
+							product.price = parseFloat(values[index]) || 0;
+						} else if (
+							header === "picture" ||
+							header === "image" ||
+							header === "images"
+						) {
+							// Extract image URL from the images field
+							const imageUrl = extractImageUrl(values[index]);
+							if (imageUrl) {
+								product.imageUrl = imageUrl;
+							}
+						} else if (
+							header === "name" ||
+							header === "product" ||
+							header === "post_title"
+						) {
+							product.name = values[index].replace(/"/g, ""); // Remove quotes
+						}
+					}
+				});
+
+				if (product.name && product.name !== "post_title") {
+					products.push(product);
+				}
+			}
+		}
+
+		return products;
+	};
+
+	const extractImageUrl = (imageField) => {
+		// Handle the complex image field format from WooCommerce
+		if (imageField && imageField.includes("!")) {
+			const parts = imageField.split("!");
+			if (parts.length > 0) {
+				return parts[0].trim();
+			}
+		}
+		return null;
+	};
+
+	const handleCSVUpload = (event) => {
+		const file = event.target.files[0];
+		if (file) {
+			const reader = new FileReader();
+			reader.onload = (e) => {
+				const csvText = e.target.result;
+				const parsedProducts = parseCSV(csvText);
+
+				if (parsedProducts.length > 0) {
+					setProducts(parsedProducts);
+					log(`Loaded ${parsedProducts.length} products from CSV`);
+				} else {
+					log("No valid products found in CSV");
+				}
+			};
+			reader.readAsText(file);
+		}
 	};
 
 	const getApiUrl = (endpoint) => {
@@ -118,6 +193,11 @@ function App() {
 					);
 					log(`File URL: ${urlObject.fileUrl}`);
 					return urlObject.fileUrl;
+				} else if (product.imageUrl) {
+					log(
+						`Using image URL from CSV for ${product.name}: ${product.imageUrl}`
+					);
+					return product.imageUrl;
 				} else {
 					log(
 						`No image for ${product.name}, using file URL: ${urlObject.fileUrl}`
@@ -256,6 +336,25 @@ function App() {
 						Note: File uploads are currently skipped due to CORS limitations.
 						The API will generate placeholder image URLs.
 					</p>
+
+					{/* CSV Upload */}
+					<div className="field" style={{ marginBottom: "20px" }}>
+						<label>Upload CSV File</label>
+						<input
+							type="file"
+							accept=".csv"
+							onChange={handleCSVUpload}
+							style={{ marginBottom: "10px" }}
+						/>
+						<small style={{ color: "#6b7280" }}>
+							Supports WooCommerce exports with: post_title, regular_price,
+							images
+							<br />
+							Or custom format: name, price, picture
+							<br />
+							Example: "Oxbar G Prime",330,https://example.com/image.jpg
+						</small>
+					</div>
 					{products.map((product, index) => (
 						<div key={index} className="product-card">
 							<div className="grid">
@@ -289,6 +388,11 @@ function App() {
 											updateProduct(index, "imageFile", e.target.files[0])
 										}
 									/>
+									{product.imageUrl && (
+										<small style={{ color: "#10b981", marginTop: "4px" }}>
+											Image URL: {product.imageUrl}
+										</small>
+									)}
 								</div>
 								{products.length > 1 && (
 									<button
