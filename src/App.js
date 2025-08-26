@@ -146,35 +146,75 @@ function App() {
 					throw fetchError;
 				}
 
-				// Step 2: Upload files to S3 via local backend proxy
-				log("Uploading images to S3 via local backend...");
+				// Step 2: Upload files to S3
+				const isProduction =
+					window.location.hostname !== "localhost" &&
+					window.location.hostname !== "127.0.0.1";
+
+				if (isProduction) {
+					log("Production mode: Uploading directly to S3...");
+				} else {
+					log("Development mode: Uploading via local backend...");
+				}
 
 				const uploadPromises = products.map(async (product, index) => {
 					if (product.imageFile) {
 						log(`Uploading ${product.imageFile.name} to S3`);
 
 						try {
-							// Send file to local backend, which will upload to S3
-							const formData = new FormData();
-							formData.append("image", product.imageFile);
-							formData.append("s3UploadUrl", urls[index].uploadUrl);
-							formData.append("xObject", urls[index].xObject || "default");
+							if (isProduction) {
+								// Production: Direct S3 upload
+								log(`Direct S3 upload to: ${urls[index].uploadUrl}`);
 
-							const uploadResponse = await fetch(getApiUrl("/api/s3-upload"), {
-								method: "POST",
-								body: formData,
-							});
+								const uploadResponse = await fetch(urls[index].uploadUrl, {
+									method: "PUT",
+									headers: {
+										"x-object": urls[index].xObject || "default",
+										"Content-Type": product.imageFile.type,
+									},
+									body: product.imageFile,
+								});
 
-							if (uploadResponse.ok) {
-								const result = await uploadResponse.json();
-								log(`✅ Successfully uploaded ${product.imageFile.name} to S3`);
-								return urls[index].fileUrl; // Use the S3 file URL
+								if (uploadResponse.ok) {
+									log(
+										`✅ Successfully uploaded ${product.imageFile.name} to S3`
+									);
+									return urls[index].fileUrl;
+								} else {
+									const errorText = await uploadResponse.text();
+									log(
+										`❌ S3 upload failed: ${uploadResponse.status} - ${errorText}`
+									);
+									throw new Error(`S3 upload failed: ${uploadResponse.status}`);
+								}
 							} else {
-								const errorText = await uploadResponse.text();
-								log(
-									`❌ S3 upload failed: ${uploadResponse.status} - ${errorText}`
+								// Development: Via local backend
+								const formData = new FormData();
+								formData.append("image", product.imageFile);
+								formData.append("s3UploadUrl", urls[index].uploadUrl);
+								formData.append("xObject", urls[index].xObject || "default");
+
+								const uploadResponse = await fetch(
+									getApiUrl("/api/s3-upload"),
+									{
+										method: "POST",
+										body: formData,
+									}
 								);
-								throw new Error(`S3 upload failed: ${uploadResponse.status}`);
+
+								if (uploadResponse.ok) {
+									const result = await uploadResponse.json();
+									log(
+										`✅ Successfully uploaded ${product.imageFile.name} to S3`
+									);
+									return urls[index].fileUrl;
+								} else {
+									const errorText = await uploadResponse.text();
+									log(
+										`❌ S3 upload failed: ${uploadResponse.status} - ${errorText}`
+									);
+									throw new Error(`S3 upload failed: ${uploadResponse.status}`);
+								}
 							}
 						} catch (uploadError) {
 							log(`❌ S3 upload error: ${uploadError.message}`);
