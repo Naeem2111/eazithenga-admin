@@ -7,7 +7,7 @@ function App() {
 		bearerToken:
 			process.env.REACT_APP_BEARER_TOKEN ||
 			"ea46b8e894b2aa453b3be6293273879ebee2a728",
-		useCorsProxy: false,
+		useCorsProxy: true,
 	});
 
 	const [store, setStore] = useState({
@@ -63,6 +63,14 @@ function App() {
 	});
 
 	const generateStore = async () => {
+		// Validate phone number format
+		if (!store.ownerNumber || !store.ownerNumber.match(/^27[0-9]{8}$/)) {
+			setError(
+				"Phone number must start with '27' followed by 8 digits (e.g., 27794343222)"
+			);
+			return;
+		}
+
 		setIsLoading(true);
 		setError(null);
 		setResult(null);
@@ -272,22 +280,14 @@ function App() {
 								For Eazithenga API calls (eazithenga.com)
 							</small>
 						</div>
-						<div className="field">
+						<div className="field" style={{ display: "none" }}>
 							<label>
-								<input
-									type="checkbox"
-									checked={config.useCorsProxy}
-									onChange={(e) =>
-										updateConfig("useCorsProxy", e.target.checked)
-									}
-								/>
+								<input type="checkbox" checked={true} disabled={true} />
 								Use CORS Proxy (for remote API calls)
 							</label>
-							{config.useCorsProxy && (
-								<small style={{ color: "#6b7280", marginTop: "4px" }}>
-									Using corsproxy.io - no setup required
-								</small>
-							)}
+							<small style={{ color: "#6b7280", marginTop: "4px" }}>
+								Using corsproxy.io - no setup required
+							</small>
 						</div>
 					</div>
 				</section>
@@ -297,12 +297,28 @@ function App() {
 					<h2>Store Details</h2>
 					<div className="grid">
 						<div className="field">
-							<label>Owner Number</label>
+							<label>Owner Number *</label>
 							<input
 								type="text"
 								value={store.ownerNumber}
 								onChange={(e) => updateStore("ownerNumber", e.target.value)}
+								required
+								pattern="^27[0-9]{8}$"
+								title="Phone number must start with '27' followed by 8 digits (e.g., 27794343222)"
+								style={{
+									borderColor:
+										store.ownerNumber &&
+										!store.ownerNumber.match(/^27[0-9]{8}$/)
+											? "#ef4444"
+											: undefined,
+								}}
 							/>
+							{store.ownerNumber &&
+								!store.ownerNumber.match(/^27[0-9]{8}$/) && (
+									<small style={{ color: "#ef4444", marginTop: "4px" }}>
+										Phone number must start with "27" followed by 8 digits
+									</small>
+								)}
 						</div>
 						<div className="field">
 							<label>Store Name</label>

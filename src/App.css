@@ -86,6 +86,22 @@ h3 {
 	box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
+.field input:invalid {
+	border-color: #ef4444;
+}
+
+.field input:invalid:focus {
+	border-color: #ef4444;
+	box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+.field label[for*="required"]::after,
+.field label:has(+ input[required])::after {
+	content: " *";
+	color: #ef4444;
+	font-weight: bold;
+}
+
 .field input[type="file"] {
 	padding: 8px;
 	border: 2px dashed #d1d5db;
@@ -95,6 +111,16 @@ h3 {
 .field input[type="checkbox"] {
 	width: auto;
 	margin-right: 8px;
+}
+
+.field small {
+	margin-top: 4px;
+	font-size: 0.8rem;
+	line-height: 1.4;
+}
+
+.field small[style*="color: #ef4444"] {
+	font-weight: 500;
 }
 
 .product-card {
