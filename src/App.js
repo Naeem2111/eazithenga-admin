@@ -64,9 +64,9 @@ function App() {
 
 	const generateStore = async () => {
 		// Validate phone number format
-		if (!store.ownerNumber || !store.ownerNumber.match(/^27[0-9]{8}$/)) {
+		if (!store.ownerNumber || !store.ownerNumber.match(/^27[0-9]{9}$/)) {
 			setError(
-				"Phone number must start with '27' followed by 8 digits (e.g., 27794343222)"
+				"Phone number must start with '27' followed by 9 digits (e.g., 27794343222)"
 			);
 			return;
 		}
@@ -303,20 +303,20 @@ function App() {
 								value={store.ownerNumber}
 								onChange={(e) => updateStore("ownerNumber", e.target.value)}
 								required
-								pattern="^27[0-9]{8}$"
-								title="Phone number must start with '27' followed by 8 digits (e.g., 27794343222)"
+								pattern="^27[0-9]{9}$"
+								title="Phone number must start with '27' followed by 9 digits (e.g., 27794343222)"
 								style={{
 									borderColor:
 										store.ownerNumber &&
-										!store.ownerNumber.match(/^27[0-9]{8}$/)
+										!store.ownerNumber.match(/^27[0-9]{9}$/)
 											? "#ef4444"
 											: undefined,
 								}}
 							/>
 							{store.ownerNumber &&
-								!store.ownerNumber.match(/^27[0-9]{8}$/) && (
+								!store.ownerNumber.match(/^27[0-9]{9}$/) && (
 									<small style={{ color: "#ef4444", marginTop: "4px" }}>
-										Phone number must start with "27" followed by 8 digits
+										Phone number must start with "27" followed by 9 digits
 									</small>
 								)}
 						</div>
