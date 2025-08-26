@@ -243,37 +243,6 @@ function App() {
 			const storeResult = await createStoreResponse.json();
 			log("Store created successfully!");
 
-			// Step 4: Clean up temporary image files
-			log("Cleaning up temporary image files...");
-			try {
-				const cleanupPromises = storeProducts.map(async (product) => {
-					if (product.imageUrl && product.imageUrl.includes("/temp-uploads/")) {
-						const cleanupResponse = await fetch(
-							getApiUrl("/api/temp-cleanup"),
-							{
-								method: "POST",
-								headers: getHeaders(),
-								body: JSON.stringify({
-									imageUrl: product.imageUrl,
-								}),
-							}
-						);
-
-						if (cleanupResponse.ok) {
-							log(`✅ Cleaned up temporary file: ${product.name}`);
-						} else {
-							log(`⚠️ Failed to cleanup temporary file: ${product.name}`);
-						}
-					}
-				});
-
-				await Promise.all(cleanupPromises);
-				log("Temporary file cleanup completed");
-			} catch (cleanupError) {
-				log(`⚠️ Cleanup error: ${cleanupError.message}`);
-				// Don't fail the whole process if cleanup fails
-			}
-
 			setResult(storeResult);
 		} catch (err) {
 			log(`ERROR: ${err.message}`);
