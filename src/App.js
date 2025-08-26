@@ -3,9 +3,12 @@ import "./App.css";
 
 function App() {
 	const [config, setConfig] = useState({
-		baseUrl: "https://eazithenga.com",
-		bearerToken: "ea46b8e894b2aa453b3be6293273879ebee2a728",
-		useCorsProxy: true,
+		baseUrl: "http://localhost:3001",
+		remoteApiUrl: "https://eazithenga.com",
+		bearerToken:
+			process.env.REACT_APP_BEARER_TOKEN ||
+			"ea46b8e894b2aa453b3be6293273879ebee2a728",
+		useCorsProxy: false,
 	});
 
 	const [store, setStore] = useState({
@@ -17,8 +20,6 @@ function App() {
 	const [products, setProducts] = useState([
 		{ name: "Product 1", price: 24.98, imageFile: null },
 	]);
-
-	const [csvData, setCsvData] = useState(null);
 
 	const [isLoading, setIsLoading] = useState(false);
 	const [result, setResult] = useState(null);
@@ -57,80 +58,16 @@ function App() {
 		setProducts((prev) => prev.filter((_, i) => i !== index));
 	};
 
-	const parseCSV = (csvText) => {
-		const lines = csvText.split("\n");
-		const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
-
-		const products = [];
-		for (let i = 1; i < lines.length; i++) {
-			if (lines[i].trim()) {
-				const values = lines[i].split(",").map((v) => v.trim());
-				const product = {};
-
-				headers.forEach((header, index) => {
-					if (values[index]) {
-						if (header === "price" || header === "regular_price") {
-							product.price = parseFloat(values[index]) || 0;
-						} else if (
-							header === "picture" ||
-							header === "image" ||
-							header === "images"
-						) {
-							// Extract image URL from the images field
-							const imageUrl = extractImageUrl(values[index]);
-							if (imageUrl) {
-								product.imageUrl = imageUrl;
-							}
-						} else if (
-							header === "name" ||
-							header === "product" ||
-							header === "post_title"
-						) {
-							product.name = values[index].replace(/"/g, ""); // Remove quotes
-						}
-					}
-				});
-
-				if (product.name && product.name !== "post_title") {
-					products.push(product);
-				}
-			}
-		}
-
-		return products;
-	};
-
-	const extractImageUrl = (imageField) => {
-		// Handle the complex image field format from WooCommerce
-		if (imageField && imageField.includes("!")) {
-			const parts = imageField.split("!");
-			if (parts.length > 0) {
-				return parts[0].trim();
-			}
-		}
-		return null;
-	};
-
-	const handleCSVUpload = (event) => {
-		const file = event.target.files[0];
-		if (file) {
-			const reader = new FileReader();
-			reader.onload = (e) => {
-				const csvText = e.target.result;
-				const parsedProducts = parseCSV(csvText);
-
-				if (parsedProducts.length > 0) {
-					setProducts(parsedProducts);
-					log(`Loaded ${parsedProducts.length} products from CSV`);
-				} else {
-					log("No valid products found in CSV");
-				}
-			};
-			reader.readAsText(file);
-		}
-	};
-
 	const getApiUrl = (endpoint) => {
+		// For local development, don't use CORS proxy
+		if (
+			config.baseUrl.includes("localhost") ||
+			config.baseUrl.includes("127.0.0.1")
+		) {
+			return `${config.baseUrl}${endpoint}`;
+		}
+
+		// For remote APIs, use CORS proxy if enabled
 		if (config.useCorsProxy) {
 			return `https://corsproxy.io/?${encodeURIComponent(
 				config.baseUrl + endpoint
@@ -153,80 +90,165 @@ function App() {
 		try {
 			log("Starting store generation...");
 
-			// Step 1: Get upload URLs
-			const uploadCount = products.length;
-			log(`Requesting ${uploadCount} upload URLs`);
+			// Step 1: Get S3 pre-signed URLs
+			log("Getting S3 pre-signed URLs...");
+			log(`Remote API URL: ${config.remoteApiUrl}`);
+			log(`Bearer token: ${config.bearerToken.substring(0, 10)}...`);
 
-			const uploadUrlsResponse = await fetch(getApiUrl("/api/file/get-urls"), {
-				method: "POST",
-				headers: getHeaders(),
-				body: JSON.stringify({ count: uploadCount }),
-			});
+			const uploadCount = products.filter((p) => p.imageFile).length;
 
-			if (!uploadUrlsResponse.ok) {
-				const error = await uploadUrlsResponse.text();
-				throw new Error(
-					`Failed to get upload URLs (${uploadUrlsResponse.status}): ${error}`
-				);
-			}
+			let storeProducts = [];
+			let urls = [];
 
-			const responseData = await uploadUrlsResponse.json();
-			log(`API Response: ${JSON.stringify(responseData)}`);
+			if (uploadCount > 0) {
+				// Use CORS proxy for remote API calls to avoid CORS issues
+				const apiUrl = config.useCorsProxy
+					? `https://corsproxy.io/?${encodeURIComponent(
+							config.remoteApiUrl + "/api/file/get-urls"
+					  )}`
+					: config.remoteApiUrl + "/api/file/get-urls";
 
-			const { urls } = responseData;
-			if (!urls || !Array.isArray(urls)) {
-				throw new Error(
-					`Invalid response format: expected urls array, got ${typeof urls}`
-				);
-			}
+				log(`Requesting S3 URLs from: ${apiUrl}`);
+				log(`Request payload: ${JSON.stringify({ count: uploadCount })}`);
 
-			log(`Received ${urls.length} upload URLs`);
+				try {
+					const uploadUrlsResponse = await fetch(apiUrl, {
+						method: "POST",
+						headers: getHeaders(),
+						body: JSON.stringify({ count: uploadCount }),
+					});
 
-			// Step 2: Upload files (if any)
-			const uploadPromises = products.map(async (product, index) => {
-				const urlObject = urls[index];
-				const uploadUrl = urlObject.uploadUrl;
+					if (!uploadUrlsResponse.ok) {
+						const errorText = await uploadUrlsResponse.text();
+						log(
+							`❌ API response error: ${uploadUrlsResponse.status} - ${errorText}`
+						);
+						throw new Error(
+							`Failed to get upload URLs: ${uploadUrlsResponse.status} - ${errorText}`
+						);
+					}
 
-				if (product.imageFile) {
-					log(
-						`Skipping upload for ${product.imageFile.name} - using placeholder URL`
-					);
-					log(`File URL: ${urlObject.fileUrl}`);
-					return urlObject.fileUrl;
-				} else if (product.imageUrl) {
-					log(
-						`Using image URL from CSV for ${product.name}: ${product.imageUrl}`
-					);
-					return product.imageUrl;
-				} else {
-					log(
-						`No image for ${product.name}, using file URL: ${urlObject.fileUrl}`
-					);
-					return urlObject.fileUrl;
+					const responseData = await uploadUrlsResponse.json();
+					log(`✅ API response: ${JSON.stringify(responseData)}`);
+
+					const responseUrls = responseData.urls;
+					if (!responseUrls || !Array.isArray(responseUrls)) {
+						throw new Error(
+							`Invalid response format: expected urls array, got ${typeof responseUrls}`
+						);
+					}
+
+					urls = responseUrls;
+					log(`Received ${urls.length} S3 upload URLs`);
+				} catch (fetchError) {
+					log(`❌ Fetch error: ${fetchError.message}`);
+					log(`Error type: ${fetchError.name}`);
+					throw fetchError;
 				}
-			});
 
-			const imageUrls = await Promise.all(uploadPromises);
+				// Step 2: Upload files to S3 via local backend proxy
+				log("Uploading images to S3 via local backend...");
 
-			// Step 3: Create store
-			const storeData = {
-				ownerNumber: store.ownerNumber,
-				name: store.name,
-				slug: store.slug,
-				products: products.map((product, index) => ({
+				const uploadPromises = products.map(async (product, index) => {
+					if (product.imageFile) {
+						log(`Uploading ${product.imageFile.name} to S3`);
+
+						try {
+							// Send file to local backend, which will upload to S3
+							const formData = new FormData();
+							formData.append("image", product.imageFile);
+							formData.append("s3UploadUrl", urls[index].uploadUrl);
+							formData.append("xObject", urls[index].xObject || "default");
+
+							const uploadResponse = await fetch(getApiUrl("/api/s3-upload"), {
+								method: "POST",
+								body: formData,
+							});
+
+							if (uploadResponse.ok) {
+								const result = await uploadResponse.json();
+								log(`✅ Successfully uploaded ${product.imageFile.name} to S3`);
+								return urls[index].fileUrl; // Use the S3 file URL
+							} else {
+								const errorText = await uploadResponse.text();
+								log(
+									`❌ S3 upload failed: ${uploadResponse.status} - ${errorText}`
+								);
+								throw new Error(`S3 upload failed: ${uploadResponse.status}`);
+							}
+						} catch (uploadError) {
+							log(`❌ S3 upload error: ${uploadError.message}`);
+							throw uploadError;
+						}
+					} else {
+						log(`No image file for ${product.name}, skipping upload`);
+						return null;
+					}
+				});
+
+				const imageUrls = await Promise.all(uploadPromises);
+
+				// Update storeProducts with S3 URLs
+				storeProducts = products
+					.map((product, index) => {
+						if (product.imageFile) {
+							return {
+								name: product.name,
+								price: parseFloat(product.price),
+								imageUrl: imageUrls[index],
+							};
+						} else {
+							return null;
+						}
+					})
+					.filter(Boolean);
+			} else {
+				// No images to upload, create store without images
+				storeProducts = products.map((product) => ({
 					name: product.name,
 					price: parseFloat(product.price),
-					imageUrl: imageUrls[index],
-				})),
-			};
+					imageUrl: null,
+				}));
+			}
 
+			// Step 3: Create store
 			log("Creating store...");
-			log(`Store data: ${JSON.stringify(storeData, null, 2)}`);
 
-			const createStoreResponse = await fetch(getApiUrl("/api/store/create"), {
+			if (storeProducts.length === 0) {
+				throw new Error("No products with valid images to create store");
+			}
+
+			log(
+				`Creating store with: ${JSON.stringify(
+					{
+						ownerNumber: store.ownerNumber,
+						name: store.name,
+						slug: store.slug,
+						products: storeProducts,
+					},
+					null,
+					2
+				)}`
+			);
+
+			// Store creation goes to the real Eazithenga API
+			const storeCreationUrl = config.useCorsProxy
+				? `https://corsproxy.io/?${encodeURIComponent(
+						config.remoteApiUrl + "/api/store/create"
+				  )}`
+				: config.remoteApiUrl + "/api/store/create";
+
+			log(`Creating store via: ${storeCreationUrl}`);
+
+			const createStoreResponse = await fetch(storeCreationUrl, {
 				method: "POST",
 				headers: getHeaders(),
-				body: JSON.stringify(storeData),
+				body: JSON.stringify({
+					ownerNumber: store.ownerNumber,
+					name: store.name,
+					slug: store.slug,
+					products: storeProducts,
+				}),
 			});
 
 			if (!createStoreResponse.ok) {
@@ -238,6 +260,38 @@ function App() {
 
 			const storeResult = await createStoreResponse.json();
 			log("Store created successfully!");
+
+			// Step 4: Clean up temporary image files
+			log("Cleaning up temporary image files...");
+			try {
+				const cleanupPromises = storeProducts.map(async (product) => {
+					if (product.imageUrl && product.imageUrl.includes("/temp-uploads/")) {
+						const cleanupResponse = await fetch(
+							getApiUrl("/api/temp-cleanup"),
+							{
+								method: "POST",
+								headers: getHeaders(),
+								body: JSON.stringify({
+									imageUrl: product.imageUrl,
+								}),
+							}
+						);
+
+						if (cleanupResponse.ok) {
+							log(`✅ Cleaned up temporary file: ${product.name}`);
+						} else {
+							log(`⚠️ Failed to cleanup temporary file: ${product.name}`);
+						}
+					}
+				});
+
+				await Promise.all(cleanupPromises);
+				log("Temporary file cleanup completed");
+			} catch (cleanupError) {
+				log(`⚠️ Cleanup error: ${cleanupError.message}`);
+				// Don't fail the whole process if cleanup fails
+			}
+
 			setResult(storeResult);
 		} catch (err) {
 			log(`ERROR: ${err.message}`);
@@ -257,20 +311,26 @@ function App() {
 					<h2>API Configuration</h2>
 					<div className="grid">
 						<div className="field">
-							<label>Base URL</label>
+							<label>Local Backend URL (for image uploads)</label>
 							<input
 								type="text"
 								value={config.baseUrl}
 								onChange={(e) => updateConfig("baseUrl", e.target.value)}
 							/>
+							<small style={{ color: "#6b7280", marginTop: "4px" }}>
+								For temporary image storage (localhost:3001)
+							</small>
 						</div>
 						<div className="field">
-							<label>Bearer Token</label>
+							<label>Remote API URL (for store creation)</label>
 							<input
 								type="text"
-								value={config.bearerToken}
-								onChange={(e) => updateConfig("bearerToken", e.target.value)}
+								value={config.remoteApiUrl}
+								onChange={(e) => updateConfig("remoteApiUrl", e.target.value)}
 							/>
+							<small style={{ color: "#6b7280", marginTop: "4px" }}>
+								For Eazithenga API calls (eazithenga.com)
+							</small>
 						</div>
 						<div className="field">
 							<label>
@@ -281,7 +341,7 @@ function App() {
 										updateConfig("useCorsProxy", e.target.checked)
 									}
 								/>
-								Use CORS Proxy (for local development)
+								Use CORS Proxy (for remote API calls)
 							</label>
 							{config.useCorsProxy && (
 								<small style={{ color: "#6b7280", marginTop: "4px" }}>
@@ -333,28 +393,10 @@ function App() {
 							fontSize: "0.9rem",
 						}}
 					>
-						Note: File uploads are currently skipped due to CORS limitations.
-						The API will generate placeholder image URLs.
+						Note: File uploads now support JPG files with x-object header.
+						Images are uploaded directly to S3 pre-signed URLs.
 					</p>
 
-					{/* CSV Upload */}
-					<div className="field" style={{ marginBottom: "20px" }}>
-						<label>Upload CSV File</label>
-						<input
-							type="file"
-							accept=".csv"
-							onChange={handleCSVUpload}
-							style={{ marginBottom: "10px" }}
-						/>
-						<small style={{ color: "#6b7280" }}>
-							Supports WooCommerce exports with: post_title, regular_price,
-							images
-							<br />
-							Or custom format: name, price, picture
-							<br />
-							Example: "Oxbar G Prime",330,https://example.com/image.jpg
-						</small>
-					</div>
 					{products.map((product, index) => (
 						<div key={index} className="product-card">
 							<div className="grid">
@@ -380,19 +422,14 @@ function App() {
 									/>
 								</div>
 								<div className="field">
-									<label>Image</label>
+									<label>Image (JPG only)</label>
 									<input
 										type="file"
-										accept="image/*"
+										accept=".jpg,.jpeg"
 										onChange={(e) =>
 											updateProduct(index, "imageFile", e.target.files[0])
 										}
 									/>
-									{product.imageUrl && (
-										<small style={{ color: "#10b981", marginTop: "4px" }}>
-											Image URL: {product.imageUrl}
-										</small>
-									)}
 								</div>
 								{products.length > 1 && (
 									<button
@@ -422,21 +459,6 @@ function App() {
 					</button>
 				</section>
 
-				{/* Results */}
-				{error && (
-					<section className="section error">
-						<h3>Error</h3>
-						<pre>{error}</pre>
-					</section>
-				)}
-
-				{result && (
-					<section className="section success">
-						<h3>Success!</h3>
-						<pre>{JSON.stringify(result, null, 2)}</pre>
-					</section>
-				)}
-
 				{/* Debug Logs */}
 				{logs.length > 0 && (
 					<section className="section logs">
@@ -449,6 +471,21 @@ function App() {
 								</div>
 							))}
 						</div>
+					</section>
+				)}
+
+				{/* Results */}
+				{error && (
+					<section className="section error">
+						<h3>Error</h3>
+						<pre>{error}</pre>
+					</section>
+				)}
+
+				{result && (
+					<section className="section success">
+						<h3>Success!</h3>
+						<pre>{JSON.stringify(result, null, 2)}</pre>
 					</section>
 				)}
 			</div>

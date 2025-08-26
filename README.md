@@ -1,84 +1,79 @@
-# Eazithenga Store Generator
+# Eazithenga Admin Panel
 
-A simple React application for generating stores with products using the Eazithenga API.
+A React-based admin panel for managing Eazithenga stores with image upload capabilities.
 
 ## Features
 
-- Upload product images using the file upload API
 - Create stores with multiple products
-- Modern, responsive UI
-- Real-time error handling and success feedback
+- Image upload for products
+- Temporary file storage on server
+- Automatic cleanup of temporary files
 
-## API Endpoints Used
+## Setup
 
-1. **Get Upload URLs**: `POST /api/file/get-urls`
-2. **Upload Files**: `PUT <uploadUrl>`
-3. **Create Store**: `POST /api/store/create`
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js (version 14 or higher)
-- npm or yarn
-
-### Installation
-
-1. Install dependencies:
+### 1. Install Dependencies
 
 ```bash
 npm install
 ```
 
-2. Start the development server:
+### 2. Start the Backend Server
+
+```bash
+npm run server
+```
+
+This will start the Express backend server on port 3001.
+
+### 3. Start the React Frontend
+
+In a new terminal:
 
 ```bash
 npm start
 ```
 
-3. Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+This will start the React app on port 3000.
 
-## Usage
-
-1. **Configure API**: Enter the base URL for your API (defaults to `https://dev.eazithenga.com`)
-
-2. **Store Details**: Fill in the store information:
-
-   - Owner Number
-   - Store Name
-   - Store Slug
-
-3. **Add Products**: For each product, provide:
-
-   - Product Name
-   - Price
-   - Image File (optional - will upload to S3)
-
-4. **Generate Store**: Click the "Generate Store" button to create the store with all products.
-
-## Project Structure
-
-```
-src/
-├── App.js          # Main application component
-├── App.css         # Application styles
-├── index.js        # Application entry point
-└── index.css       # Global styles
-
-public/
-└── index.html      # HTML template
-```
-
-## Build for Production
+### 4. Or Run Both Simultaneously
 
 ```bash
-npm run build
+npm run dev
 ```
 
-This creates a `build` folder with the production-ready files.
+This runs both frontend and backend concurrently.
 
-## Technologies Used
+## How It Works
 
-- React 18
-- CSS3 with modern styling
-- Fetch API for HTTP requests
+1. **Image Upload**: Images are uploaded to `/public/temp-uploads/` on the backend
+2. **Store Creation**: The frontend uses temporary image URLs to create stores
+3. **Cleanup**: Temporary files are automatically deleted after store creation
+
+## Backend Endpoints
+
+- `POST /api/temp-upload` - Upload image files
+- `POST /api/temp-cleanup` - Clean up temporary files
+- `GET /api/temp-files` - List temporary files (debugging)
+
+## File Structure
+
+```
+├── src/                 # React frontend
+├── server.js           # Express backend
+├── public/             # Static files
+│   └── temp-uploads/   # Temporary image storage
+└── package.json        # Dependencies
+```
+
+## Troubleshooting
+
+- **Port conflicts**: Make sure ports 3000 and 3001 are available
+- **CORS issues**: Backend has CORS enabled for localhost:3000
+- **File uploads**: Check `/public/temp-uploads/` directory exists
+- **Image cleanup**: Verify cleanup endpoint is working
+
+## Development
+
+- Backend runs on: http://localhost:3001
+- Frontend runs on: http://localhost:3000
+- Temporary files accessible at: http://localhost:3001/temp-uploads/
