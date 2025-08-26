@@ -3,7 +3,6 @@ import "./App.css";
 
 function App() {
 	const [config, setConfig] = useState({
-		baseUrl: "http://localhost:3001",
 		remoteApiUrl: "https://eazithenga.com",
 		bearerToken:
 			process.env.REACT_APP_BEARER_TOKEN ||
@@ -56,24 +55,6 @@ function App() {
 
 	const removeProduct = (index) => {
 		setProducts((prev) => prev.filter((_, i) => i !== index));
-	};
-
-	const getApiUrl = (endpoint) => {
-		// For local development, don't use CORS proxy
-		if (
-			config.baseUrl.includes("localhost") ||
-			config.baseUrl.includes("127.0.0.1")
-		) {
-			return `${config.baseUrl}${endpoint}`;
-		}
-
-		// For remote APIs, use CORS proxy if enabled
-		if (config.useCorsProxy) {
-			return `https://corsproxy.io/?${encodeURIComponent(
-				config.baseUrl + endpoint
-			)}`;
-		}
-		return `${config.baseUrl}${endpoint}`;
 	};
 
 	const getHeaders = () => ({
@@ -147,74 +128,35 @@ function App() {
 				}
 
 				// Step 2: Upload files to S3
-				const isProduction =
-					window.location.hostname !== "localhost" &&
-					window.location.hostname !== "127.0.0.1";
-
-				if (isProduction) {
-					log("Production mode: Uploading directly to S3...");
-				} else {
-					log("Development mode: Uploading via local backend...");
-				}
+				// Always use the Vercel API endpoint for S3 uploads
+				log("Uploading via Vercel API...");
 
 				const uploadPromises = products.map(async (product, index) => {
 					if (product.imageFile) {
 						log(`Uploading ${product.imageFile.name} to S3`);
 
 						try {
-							if (isProduction) {
-								// Production: Direct S3 upload
-								log(`Direct S3 upload to: ${urls[index].uploadUrl}`);
+							// Always use Vercel API for S3 uploads
+							const formData = new FormData();
+							formData.append("image", product.imageFile);
+							formData.append("s3UploadUrl", urls[index].uploadUrl);
+							formData.append("xObject", urls[index].xObject || "default");
 
-								const uploadResponse = await fetch(urls[index].uploadUrl, {
-									method: "PUT",
-									headers: {
-										"x-object": urls[index].xObject || "default",
-										"Content-Type": product.imageFile.type,
-									},
-									body: product.imageFile,
-								});
+							const uploadResponse = await fetch("/api/s3-upload", {
+								method: "POST",
+								body: formData,
+							});
 
-								if (uploadResponse.ok) {
-									log(
-										`✅ Successfully uploaded ${product.imageFile.name} to S3`
-									);
-									return urls[index].fileUrl;
-								} else {
-									const errorText = await uploadResponse.text();
-									log(
-										`❌ S3 upload failed: ${uploadResponse.status} - ${errorText}`
-									);
-									throw new Error(`S3 upload failed: ${uploadResponse.status}`);
-								}
+							if (uploadResponse.ok) {
+								const result = await uploadResponse.json();
+								log(`✅ Successfully uploaded ${product.imageFile.name} to S3`);
+								return urls[index].fileUrl;
 							} else {
-								// Development: Via local backend
-								const formData = new FormData();
-								formData.append("image", product.imageFile);
-								formData.append("s3UploadUrl", urls[index].uploadUrl);
-								formData.append("xObject", urls[index].xObject || "default");
-
-								const uploadResponse = await fetch(
-									getApiUrl("/api/s3-upload"),
-									{
-										method: "POST",
-										body: formData,
-									}
+								const errorText = await uploadResponse.text();
+								log(
+									`❌ S3 upload failed: ${uploadResponse.status} - ${errorText}`
 								);
-
-								if (uploadResponse.ok) {
-									const result = await uploadResponse.json();
-									log(
-										`✅ Successfully uploaded ${product.imageFile.name} to S3`
-									);
-									return urls[index].fileUrl;
-								} else {
-									const errorText = await uploadResponse.text();
-									log(
-										`❌ S3 upload failed: ${uploadResponse.status} - ${errorText}`
-									);
-									throw new Error(`S3 upload failed: ${uploadResponse.status}`);
-								}
+								throw new Error(`S3 upload failed: ${uploadResponse.status}`);
 							}
 						} catch (uploadError) {
 							log(`❌ S3 upload error: ${uploadError.message}`);
@@ -350,17 +292,6 @@ function App() {
 				<section className="section">
 					<h2>API Configuration</h2>
 					<div className="grid">
-						<div className="field">
-							<label>Local Backend URL (for image uploads)</label>
-							<input
-								type="text"
-								value={config.baseUrl}
-								onChange={(e) => updateConfig("baseUrl", e.target.value)}
-							/>
-							<small style={{ color: "#6b7280", marginTop: "4px" }}>
-								For temporary image storage (localhost:3001)
-							</small>
-						</div>
 						<div className="field">
 							<label>Remote API URL (for store creation)</label>
 							<input
